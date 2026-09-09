@@ -89,7 +89,7 @@ export { BlobFile } from 'generic-filehandle'
 ```js
 // scripts/build-vendor.js
 import { build } from 'esbuild'
-import polyfillNode from 'esbuild-plugin-polyfill-node'
+import { polyfillNode } from 'esbuild-plugin-polyfill-node'
 
 await build({
   entryPoints: ['scripts/vendor-entry.js'],
@@ -111,8 +111,8 @@ Expected: prints `[ 'BigWig', 'BlobFile' ]` with no import errors.
 
 This alone does not prove browser-loadability (Node can satisfy a bare `require` that a browser can't). Also run:
 
-Run: `grep -c '__require(' vendor/bbi.bundle.js`
-Expected: `0` — esbuild's `__require` helper is what a leftover, unpolyfilled Node builtin import compiles down to; zero occurrences means nothing in the bundle depends on a runtime `require` that only Node provides. If this is nonzero, the polyfill plugin didn't cover every path — do not treat the Node `import()` check above as sufficient on its own; report BLOCKED with which builtin `grep -o '__require([\"'"'"'][a-z]*[\"'"'"'])' vendor/bbi.bundle.js | sort -u` shows unresolved.
+Run: `grep -c '__require(\"' vendor/bbi.bundle.js`
+Expected: `0`. (Note the quote in the pattern — `grep -c '__require('` alone also matches esbuild's one-time helper *definition*, `function __require() {...}`, which is harmless; what actually breaks a browser is a *call site* like `__require("fs")`, which this stricter pattern targets.) If nonzero, the polyfill plugin didn't cover every path — do not treat the Node `import()` check above as sufficient on its own; report BLOCKED with which builtin `grep -o '__require([\"'"'"'][a-z]*[\"'"'"'])' vendor/bbi.bundle.js | sort -u` shows unresolved.
 
 - [ ] **Step 7: Create the BED fixture**
 
