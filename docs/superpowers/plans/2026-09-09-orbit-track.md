@@ -613,7 +613,6 @@ test('openBigWig reads chrom sizes from the header', async () => {
   assert.equal(typeof chromSizes, 'object')
   assert.ok(Object.keys(chromSizes).length > 0)
   assert.ok(Object.values(chromSizes)[0] > 0)
-  test.mock // no-op reference to keep imports used if handle unused elsewhere
   assert.ok(handle)
 })
 
@@ -1061,15 +1060,13 @@ function appendPath(d, color, cx, cy) {
   viewport.appendChild(path)
 }
 
-async function handleBigWigFile(file, strandRole) {
+async function handleBigWigFile(file) {
   const handle = await openBigWig(new BlobFile(file))
   const chromName = Object.keys(handle.chromSizes)[0]
   const length = handle.chromSizes[chromName]
 
   if (!genome) {
     genome = resetView(createGenome(length))
-  } else if (length !== genome.length) {
-    showError(`"${file.name}" genome length (${length}) doesn't match the loaded genome (${genome.length}); it will be clipped.`)
   }
 
   return { handle, length, name: file.name.replace(/\.(bw|bigwig)$/i, '') }
@@ -1093,6 +1090,9 @@ async function handleDroppedFiles(files) {
     try {
       const { handle, length, name } = await handleBigWigFile(file)
       const track = createSignalTrack({ name, files: { single: file.name }, genomeLength: length })
+      if (checkGenomeLengthMismatch(track, genome.length)) {
+        showError(`"${file.name}" genome length (${length}) doesn't match the loaded genome (${genome.length}); it will be clipped.`)
+      }
       bigWigHandles.set(track.id, { chromSizes: handle.chromSizes, single: handle.handle })
       trackList = addTrack(trackList, track)
     } catch (err) {
