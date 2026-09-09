@@ -48,12 +48,13 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/",
-    "vendor": "esbuild scripts/vendor-entry.js --bundle --format=esm --platform=browser --outfile=vendor/bbi.bundle.js"
+    "vendor": "node scripts/build-vendor.js"
   },
   "devDependencies": {
     "@gmod/bbi": "^3.0.1",
     "generic-filehandle": "^3.0.0",
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.24.0",
+    "esbuild-plugin-polyfill-node": "^0.3.0"
   }
 }
 ```
@@ -73,21 +74,45 @@ Expected: `node_modules/` populated, `package-lock.json` created, no errors.
 
 - [ ] **Step 4: Create the vendor bundle entry point**
 
+The browser bundle exports only `BigWig` and `BlobFile` — `LocalFile` needs Node's `fs` module, which has no place in a browser bundle at all, and the app never uses it (drag-dropped files are `Blob`s, handled by `BlobFile`). Node-side test code that needs `LocalFile` for reading local fixture files imports it directly from the `generic-filehandle` npm package instead (a devDependency, available under `node_modules` when `node --test` runs) — see Task 5.
+
 ```js
 // scripts/vendor-entry.js
 export { BigWig } from '@gmod/bbi'
-export { BlobFile, LocalFile } from 'generic-filehandle'
+export { BlobFile } from 'generic-filehandle'
 ```
 
-- [ ] **Step 5: Build the vendor bundle**
+- [ ] **Step 5: Build the vendor bundle with Node-builtin polyfills**
+
+`@gmod/bbi` and `generic-filehandle` use Node's `buffer`/`zlib` internally with no `"browser"` field in their `package.json` to swap in browser-safe versions, so a plain `esbuild --platform=browser` leaves unresolved `require("buffer")`/`require("zlib")` calls that throw in a real browser (there is no `require` global there). Use the `esbuild-plugin-polyfill-node` plugin, which auto-polyfills Node builtins for a browser target, via esbuild's JS API (the CLI has no plugin flag):
+
+```js
+// scripts/build-vendor.js
+import { build } from 'esbuild'
+import polyfillNode from 'esbuild-plugin-polyfill-node'
+
+await build({
+  entryPoints: ['scripts/vendor-entry.js'],
+  bundle: true,
+  format: 'esm',
+  platform: 'browser',
+  outfile: 'vendor/bbi.bundle.js',
+  plugins: [polyfillNode()],
+})
+```
 
 Run: `npm run vendor`
 Expected: `vendor/bbi.bundle.js` created, no build errors.
 
-- [ ] **Step 6: Verify the bundle has no unresolved imports**
+- [ ] **Step 6: Verify the bundle has no unresolved Node-builtin requires**
 
 Run: `node -e "import('./vendor/bbi.bundle.js').then(m => console.log(Object.keys(m)))"`
-Expected: prints `[ 'BigWig', 'BlobFile', 'LocalFile' ]` with no import errors. (Node can load browser-platform ESM output as long as it doesn't touch browser-only globals at import time — this just confirms the bundle is self-contained. If it errors on a browser global, add `--platform=neutral` instead of `--platform=browser` in Step 1's script and rebuild.)
+Expected: prints `[ 'BigWig', 'BlobFile' ]` with no import errors.
+
+This alone does not prove browser-loadability (Node can satisfy a bare `require` that a browser can't). Also run:
+
+Run: `grep -c '__require(' vendor/bbi.bundle.js`
+Expected: `0` — esbuild's `__require` helper is what a leftover, unpolyfilled Node builtin import compiles down to; zero occurrences means nothing in the bundle depends on a runtime `require` that only Node provides. If this is nonzero, the polyfill plugin didn't cover every path — do not treat the Node `import()` check above as sufficient on its own; report BLOCKED with which builtin `grep -o '__require([\"'"'"'][a-z]*[\"'"'"'])' vendor/bbi.bundle.js | sort -u` shows unresolved.
 
 - [ ] **Step 7: Create the BED fixture**
 
@@ -125,7 +150,7 @@ Copy the smallest one to `test/fixtures/sample.bw`, e.g.:
 - [ ] **Step 10: Commit**
 
 ```bash
-git add package.json package-lock.json .gitignore scripts/vendor-entry.js vendor/bbi.bundle.js test/fixtures/sample.bed test/fixtures/sample.bw index.html
+git add package.json package-lock.json .gitignore scripts/vendor-entry.js scripts/build-vendor.js vendor/bbi.bundle.js test/fixtures/sample.bed test/fixtures/sample.bw index.html
 git commit -m "chore: project scaffold, vendored bigwig lib, test fixtures"
 ```
 
@@ -588,7 +613,7 @@ git commit -m "feat: track list model (add/remove/reorder/visibility/color)"
 - Test: `test/parse-bigwig.test.js`
 
 **Interfaces:**
-- Consumes: `BigWig`, `LocalFile` from `vendor/bbi.bundle.js` (Task 1).
+- Consumes: `BigWig` from `vendor/bbi.bundle.js` (Task 1; the browser bundle exports only `BigWig`/`BlobFile` — `LocalFile` isn't in it, see Task 1 Step 4). This task's own tests need `LocalFile` to read a local fixture file under Node, so they import it directly from the `generic-filehandle` npm package (a devDependency, present under `node_modules` when `node --test` runs) rather than from the vendor bundle.
 - Produces: `openBigWig(filehandle) -> Promise<{ chromSizes: Record<string, number> }>`, `getBinnedValues(bigWigHandle, chromName, start, end, binCount) -> Promise<{ start: number, end: number, value: number }[]>` (exactly `binCount` bins spanning `[start, end)`, `value` = mean score in that bin, `0` for bins with no data).
 
 - [ ] **Step 1: Inspect the installed `@gmod/bbi` API before writing the wrapper**
@@ -603,7 +628,7 @@ Confirm: the `BigWig` class constructor shape (expected: `new BigWig({ filehandl
 // test/parse-bigwig.test.js
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { LocalFile } from '../vendor/bbi.bundle.js'
+import { LocalFile } from 'generic-filehandle'
 import { openBigWig, getBinnedValues } from '../src/parse-bigwig.js'
 
 const fixturePath = new URL('./fixtures/sample.bw', import.meta.url).pathname

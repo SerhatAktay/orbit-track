@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/",
-    "vendor": "esbuild scripts/vendor-entry.js --bundle --format=esm --platform=node --outfile=vendor/bbi.bundle.js"
+    "vendor": "node scripts/build-vendor.js"
   },
   "devDependencies": {
     "@gmod/bbi": "^3.0.1",
     "generic-filehandle": "^3.0.0",
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.24.0",
+    "esbuild-plugin-polyfill-node": "^0.3.0"
   }
 }
