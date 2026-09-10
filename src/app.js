@@ -27,6 +27,15 @@ let genome = null
 let trackList = []
 const bigWigHandles = new Map()
 
+// Bumped at the start of every render() call. A fast wheel-zoom fires many
+// overlapping renders (each awaits getBinnedValues); without this guard a
+// slow-to-resolve earlier render can append its (now-stale) paths after a
+// faster later render already drew the current view, leaving a stale frame
+// on screen. Each render captures its generation and bails before any DOM
+// write once a newer render has started — it doesn't cancel the in-flight
+// fetch, just refuses to draw with it.
+let renderGeneration = 0
+
 function showError(message) {
   errorBanner.textContent = message
   errorBanner.style.display = 'block'
@@ -35,6 +44,7 @@ function showError(message) {
 
 async function render() {
   if (!genome) return
+  const myGeneration = ++renderGeneration
   viewport.innerHTML = ''
   const cx = svg.clientWidth / 2
   const cy = svg.clientHeight / 2
@@ -61,16 +71,19 @@ async function render() {
         getBinnedValues(handle.plus, chromName, start, end, track.binCount),
         getBinnedValues(handle.minus, chromName, start, end, track.binCount),
       ])
+      if (myGeneration !== renderGeneration) return // a newer render superseded this one
       const merged = plusBins.map((b, i) => ({ start: b.start, value: b.value - minusBins[i].value }))
       const d = signalTrackPath(merged, { innerRadius, outerRadius }, genome.length, { mirrored: true })
       appendPath(d, track.color, cx, cy)
     } else {
       const bins = await getBinnedValues(handle.single, chromName, start, end, track.binCount)
+      if (myGeneration !== renderGeneration) return // a newer render superseded this one
       const d = signalTrackPath(bins, { innerRadius, outerRadius }, genome.length)
       appendPath(d, track.color, cx, cy)
     }
   }
 
+  if (myGeneration !== renderGeneration) return // a newer render superseded this one
   renderTrackPanel(panel, trackList, {
     onVisibilityChange: (id, visible) => { trackList = setVisibility(trackList, id, visible); render() },
     onColorChange: (id, color) => { trackList = setColor(trackList, id, color); render() },
