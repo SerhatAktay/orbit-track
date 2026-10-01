@@ -82,3 +82,23 @@ test('createAnnotationTrack stores features', () => {
   assert.equal(t.type, 'annotation')
   assert.equal(t.features.length, 1)
 })
+
+import { pairBigWigFiles, packLanes } from '../src/tracks.js'
+
+test('pairBigWigFiles merges plus/minus files and leaves the rest single', () => {
+  const f = (name) => ({ name })
+  const out = pairBigWigFiles([f('s1.plus.bw'), f('s1.minus.bw'), f('s2_fwd.bw'), f('lone.bw'), f('s3_rev.bw')])
+  assert.equal(out.length, 4)
+  assert.deepEqual(out.filter((e) => e.plus).map((e) => e.name), ['s1'])
+  assert.deepEqual(out.filter((e) => e.single).map((e) => e.name).sort(), ['lone', 's2_fwd', 's3_rev'])
+})
+
+test('packLanes puts overlapping features in separate lanes', () => {
+  const { lanes, laneCount } = packLanes([
+    { start: 0, end: 100 },
+    { start: 50, end: 150 },
+    { start: 100, end: 200 },
+  ])
+  assert.equal(laneCount, 2)
+  assert.deepEqual(lanes, [0, 1, 0])
+})
